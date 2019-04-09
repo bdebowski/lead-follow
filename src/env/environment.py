@@ -1,5 +1,5 @@
-from idrawable import IDrawable
-from iupdatable import IUpdatable
+from src.gfx.idrawable import IDrawable
+from src.env.iupdatable import IUpdatable
 
 
 class Environment(IDrawable, IUpdatable):
@@ -15,6 +15,7 @@ class Environment(IDrawable, IUpdatable):
 
     def update(self, dt):
         # update self
+        print(dt)
         # update each updatable
         for updatable in self._updatables:
             updatable.update(dt)
