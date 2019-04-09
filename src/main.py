@@ -7,12 +7,12 @@ def main():
     # create environment e
     # run e on new process
     env = Environment()
-    backend = Backend(env)
+    backend = Backend([env])
     backend.run()
 
     # create frontend / main window
     # and start its event loop
-    frontend = Frontend()
+    frontend = Frontend(env.create_gfx_items())
     frontend.run()
 
 

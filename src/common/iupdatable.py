@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
 
 
-class IDrawable(metaclass=ABCMeta):
+class IUpdatable(metaclass=ABCMeta):
     @abstractmethod
-    def draw(self):
+    def update(self, dt_sec):
         pass

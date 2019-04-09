@@ -4,10 +4,10 @@ from src.gfx.mainwin import MainWin
 
 
 class Frontend:
-    def __init__(self):
-        self._mainwin = MainWin(1200, 800)
+    def __init__(self, vectgfxes):
+        self._mainwin = MainWin(vectgfxes, 1200, 800)
 
-        pyglet.clock.schedule(self._mainwin.update_gfx)
+        pyglet.clock.schedule(self._mainwin.update)
 
         @self._mainwin.event
         def on_draw():

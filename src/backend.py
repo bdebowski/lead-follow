@@ -3,8 +3,8 @@ import time
 
 
 class Backend:
-    def __init__(self, iupdatable):
-        self._updatable = iupdatable
+    def __init__(self, iupdatables):
+        self._updatables = iupdatables
         self._process = Process(target=self._run, daemon=True)
 
     def run(self):
@@ -18,7 +18,8 @@ class Backend:
         t_prev = time.time()
         while True:
             t_now = time.time()
-            dt = t_now - t_prev
+            dt_sec = t_now - t_prev
             t_prev = t_now
 
-            self._updatable.update(dt)
+            for u in self._updatables:
+                u.update(dt_sec)
