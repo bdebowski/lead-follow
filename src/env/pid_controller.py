@@ -13,9 +13,9 @@ class PIDController:
         p.start()
 
     def _run(self):
-        p = 25
+        p = 40
         i = 0.015
-        d = 1.0
+        d = 2.0
         decay = 0.99
 
         err_accum = 0.0

@@ -17,7 +17,7 @@ class Environment(IUpdatable):
         self._followcart = Cart(self._follow_centre)
         self._updatables.append(self._followcart)
 
-        self._override_controller = OverrideController(self._leadcart, self._lead_centre, 150.0, 5.0)
+        self._override_controller = OverrideController(self._leadcart, self._lead_centre, 350.0, 250.0, 16.0, 3.0, 2.0, 8.0)
         self._updatables.append(self._override_controller)
 
         self._pid_controller = PIDController(self._followcart, self._leadcart, 0.0)
