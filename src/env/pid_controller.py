@@ -13,10 +13,12 @@ class PIDController:
         p.start()
 
     def _run(self):
-        p = 40
-        i = 0.015
-        d = 2.0
-        decay = 0.99
+        p = 60.0
+        i = 10.0
+        d = 3.0
+
+        integral_time_sec = 1.5
+        decay_per_sec = 1.0 - 1.0 / integral_time_sec
 
         err_accum = 0.0
         err_prev = 0.0
@@ -27,11 +29,13 @@ class PIDController:
             dt_sec = t_now - t_prev
             t_prev = t_now
 
+            decay = decay_per_sec ** dt_sec
+
             d_obs = self._cart_control.position()[0] - self._cart_follow.position()[0]
 
             err = d_obs - self._dist_tgt
             d_err = (err - err_prev) / dt_sec
-            err_accum = decay * err_accum + err
+            err_accum = decay * err_accum + dt_sec * err
             err_prev = err
 
             acc_applied = p * -err + i * -err_accum + d * -d_err

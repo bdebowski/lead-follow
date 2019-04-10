@@ -12,17 +12,17 @@ class _MetaClassCombined(type(pyglet.window.Window), ABCMeta):
 
 
 class MainWin(pyglet.window.Window, IDrawable, IUpdatable, metaclass=_MetaClassCombined):
-    def __init__(self, vectgfxes, *args, **kwargs):
+    def __init__(self, gfxitems, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self._fps_display = pyglet.window.FPSDisplay(self)
 
         self._drawables = []
         self._drawables.append(self._fps_display)
-        self._drawables.extend(vectgfxes)
+        self._drawables.extend(gfxitems)
 
         self._updatables = []
-        self._updatables.extend(vectgfxes)
+        self._updatables.extend(gfxitems)
 
     def draw(self):
         self.clear()

@@ -2,11 +2,10 @@ from abc import abstractmethod
 
 import pyglet as pg
 
-from src.gfx.idrawable import IDrawable
-from src.common.iupdatable import IUpdatable
+from src.gfx.gfxitem import GfxItem
 
 
-class VectGfx(IDrawable, IUpdatable):
+class VectGfx(GfxItem):
     def __init__(self, iobservable, edge_list, colour):
         """
         Vector graphics for an observable object.
