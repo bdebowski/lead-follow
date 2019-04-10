@@ -7,6 +7,7 @@ from src.env.metrics import Metrics
 from src.gfx.metricsgfx import MetricsGfx
 
 
+LEAD_PROGRAM_SIMPLE = (350.0, 350.0, 1.0, 3.0, 3.0, 1.0)
 LEAD_PROGRAM_COMPLEX = (350.0, 250.0, 16.0, 3.0, 2.0, 8.0)
 LEAD_PROGRAM_RANDOMISH = (350.0, 250.0, 3.428571, 3.0, 2.0, 2.142857)
 
@@ -26,7 +27,7 @@ class Environment(IUpdatable):
         self._override_controller = OverrideController(
             self._leadcart,
             self._lead_centre,
-            *LEAD_PROGRAM_RANDOMISH)
+            *LEAD_PROGRAM_SIMPLE)
         self._updatables.append(self._override_controller)
 
         self._follow_offset = 0.0
