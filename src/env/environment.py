@@ -1,15 +1,15 @@
 from src.common.iupdatable import IUpdatable
 from src.env.cart import Cart
 from src.gfx.rectgfx import RectGfx
-from src.env.override_controller import OverrideController
-from src.env.pid_controller import PIDController
+from src.controller.override_controller import OverrideController
+from src.controller.ann_controller import ANNController
 from src.env.metrics import Metrics
 from src.gfx.metricsgfx import MetricsGfx
 
 
 LEAD_PROGRAM_SIMPLE = (350.0, 350.0, 1.0, 3.0, 3.0, 1.0)
 LEAD_PROGRAM_COMPLEX = (350.0, 250.0, 16.0, 3.0, 2.0, 8.0)
-LEAD_PROGRAM_RANDOMISH = (350.0, 250.0, 3.428571, 3.0, 2.0, 2.142857)
+LEAD_PROGRAM_RANDOMISH = (400.0, 200.0, 3.428571, 2.5, 1.5, 2.142857)
 
 
 class Environment(IUpdatable):
@@ -27,12 +27,11 @@ class Environment(IUpdatable):
         self._override_controller = OverrideController(
             self._leadcart,
             self._lead_centre,
-            *LEAD_PROGRAM_SIMPLE)
+            *LEAD_PROGRAM_RANDOMISH)
         self._updatables.append(self._override_controller)
 
         self._follow_offset = 0.0
-        self._pid_controller = PIDController(self._followcart, self._leadcart, self._follow_offset)
-        self._pid_controller.run()
+        ANNController.run(self._followcart, self._leadcart, self._follow_offset)
 
         self._metrics = Metrics(self._leadcart, self._followcart, self._follow_offset, 50.0)
         self._updatables.append(self._metrics)
