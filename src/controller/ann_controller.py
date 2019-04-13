@@ -11,8 +11,20 @@ class ANNController:
         self._cart_follow = cart_to_follow
         self._dist_tgt = target_distance
 
-        self._in = np.zeros((1, 3), np.float32)
-        self._graph = tf.Variable([[60.0], [10.0], [3.0]])
+        self._tau = 1.0
+        self._sample_size = 100
+        self._sample_index = 0
+        self._accumulated_discounted_future_err = np.zeros(self._sample_size, np.float32)
+
+        self._uin = np.zeros((1, 3), np.float32)
+        layer = tf.keras.layers.Dense(1, None, input_dim=3)
+        self._u = tf.keras.Sequential([layer])
+        layer.set_weights([
+            np.array([[60.0], [10.0], [3.0]], np.float32),
+            np.array([0.0], np.float32)])
+
+        #self._vin = np.zeros((1, 7), np.float32)
+        #self._vh1 = tf.
 
     @staticmethod
     def run(cart_to_control, cart_to_follow, target_distance=0.0):
@@ -44,6 +56,6 @@ class ANNController:
             err_accum = decay * err_accum + dt_sec * err
             err_prev = err
 
-            controller._in[0] = [-err, -err_accum, -d_err]
-            acc_applied = tf.matmul(controller._in, controller._graph)
+            controller._uin[0] = [-err, -err_accum, -d_err]
+            acc_applied = controller._u(controller._uin)
             controller._cart_control.acceleration = (acc_applied, 0.0)
