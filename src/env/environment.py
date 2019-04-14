@@ -33,7 +33,7 @@ class Environment(IUpdatable):
         self._follow_offset = 0.0
         ANNController.run(self._followcart, self._leadcart, self._follow_offset)
 
-        self._metrics = Metrics(self._leadcart, self._followcart, self._follow_offset, 50.0)
+        self._metrics = Metrics(self._leadcart, self._followcart, self._follow_offset)
         self._updatables.append(self._metrics)
 
     def update(self, dt_sec):
