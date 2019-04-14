@@ -22,7 +22,7 @@ class Metrics(IUpdatable):
         self._mae = RawArray('d', 3)
 
     def update(self, _):
-        err_abs = math.fabs(self._followcart.position()[0] - self._leadcart.position()[0] - self._dist_target)
+        err_abs = math.fabs(self._followcart.pos[0] - self._leadcart.pos[0] - self._dist_target)
 
         self._abserr_sum_10k.insert_next(err_abs)
         self._abserr_sum_100k.insert_next(err_abs)

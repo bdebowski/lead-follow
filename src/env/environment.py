@@ -44,6 +44,6 @@ class Environment(IUpdatable):
 
     def create_gfx_items(self):
         return [
-            RectGfx(self._leadcart, 10, 5, (200, 100, 100)),
-            RectGfx(self._followcart, 10, 5, (100, 100, 200)),
+            RectGfx(self._leadcart, 15, 8, (200, 100, 100)),
+            RectGfx(self._followcart, 15, 8, (100, 100, 200)),
             MetricsGfx(self._metrics, 10, 790)]

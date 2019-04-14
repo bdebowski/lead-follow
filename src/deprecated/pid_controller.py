@@ -31,7 +31,7 @@ class PIDController:
 
             decay = decay_per_sec ** dt_sec
 
-            d_obs = self._cart_control.position()[0] - self._cart_follow.position()[0]
+            d_obs = self._cart_control.pos()[0] - self._cart_follow.pos()[0]
 
             err = d_obs - self._dist_tgt
             d_err = (err - err_prev) / dt_sec
@@ -39,4 +39,4 @@ class PIDController:
             err_prev = err
 
             acc_applied = p * -err + i * -err_accum + d * -d_err
-            self._cart_control.acceleration = (acc_applied, 0.0)
+            self._cart_control.acc = (acc_applied, 0.0)

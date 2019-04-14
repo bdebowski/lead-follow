@@ -7,8 +7,8 @@ import numpy as np
 
 class ANNController:
     def __init__(self, cart_to_control, cart_to_follow, target_distance):
-        self._cart_control = cart_to_control
-        self._cart_follow = cart_to_follow
+        self._controlled_cart = cart_to_control
+        self._followed_cart = cart_to_follow
         self._dist_tgt = target_distance
 
         '''self._tau = 1.0
@@ -50,7 +50,7 @@ class ANNController:
 
             decay = decay_per_sec ** dt_sec
 
-            d_obs = controller._cart_control.position()[0] - controller._cart_follow.position()[0]
+            d_obs = controller._controlled_cart.pos[0] - controller._followed_cart.pos[0]
 
             err = d_obs - controller._dist_tgt
             d_err = (err - err_prev) / dt_sec
@@ -59,4 +59,4 @@ class ANNController:
 
             controller._uin[0] = [-err, -err_accum, -d_err]
             acc_applied = controller._u(controller._uin)
-            controller._cart_control.acceleration = (acc_applied, 0.0)
+            controller._controlled_cart.set_acc((acc_applied, 0.0))

@@ -23,7 +23,7 @@ class RectGfx(VectGfx):
                  Where (x1, y1) is the bottom left corner, and we go around clockwise from there.
         """
         # centre is (x, y) tuple of centre point coordinates
-        centre = self._observable.position()
+        centre = self._observable.pos
         c_x, c_y = centre[0], centre[1]
 
         h_w = self._width / 2.0
