@@ -28,9 +28,9 @@ class Metrics(IUpdatable):
         self._abserr_sum_100k.insert_next(err_abs)
         self._abserr_sum_1m.insert_next(err_abs)
 
-        self._mae[0] = self._abserr_sum_10k.current_sum() / self._10K
-        self._mae[1] = self._abserr_sum_100k.current_sum() / self._100K
-        self._mae[2] = self._abserr_sum_1m.current_sum() / self._1M
+        self._mae[0] = self._abserr_sum_10k.mean
+        self._mae[1] = self._abserr_sum_100k.mean
+        self._mae[2] = self._abserr_sum_1m.mean
 
     @property
     def mae(self):

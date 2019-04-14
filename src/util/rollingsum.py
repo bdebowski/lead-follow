@@ -4,6 +4,7 @@ from src.util.rotatingbuffer import RotatingBuffer
 class RollingSum:
     def __init__(self, size):
         self._sz = size
+        self._sz_inserted = 0
         self._sum = 0.0
         self._i = 0
         self._resum = 0.0
@@ -29,5 +30,13 @@ class RollingSum:
         self._buffer.set_next(value)
         self._sum += value - last_value
 
-    def current_sum(self):
+        # Track number of values inserted to use for calculations like mean
+        self._sz_inserted = min(self._sz_inserted + 1, self._sz)
+
+    @property
+    def sum(self):
         return self._sum
+
+    @property
+    def mean(self):
+        return self._sum / self._sz_inserted
