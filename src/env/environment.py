@@ -13,25 +13,25 @@ LEAD_PROGRAM_RANDOMISH = (400.0, 200.0, 3.428571, 2.5, 1.5, 2.142857)
 
 
 class Environment(IUpdatable):
-    def __init__(self):
+    def __init__(self, width, height, cartlength, cartwidth):
         self._updatables = []
 
-        self._lead_centre = (600.0, 400.0)
-        self._leadcart = Cart(self._lead_centre)
+        self._lead_centre = (width / 2, height / 2)
+        self._leadcart = Cart(self._lead_centre, cartlength, cartwidth)
         self._updatables.append(self._leadcart)
 
-        self._follow_centre = (600.0, 400.0)
-        self._followcart = Cart(self._follow_centre)
+        self._follow_centre = (width / 2, height / 2)
+        self._followcart = Cart(self._follow_centre, cartlength, cartwidth)
         self._updatables.append(self._followcart)
 
         self._override_controller = OverrideController(
             self._leadcart,
             self._lead_centre,
-            *LEAD_PROGRAM_RANDOMISH)
+            *LEAD_PROGRAM_SIMPLE)
         self._updatables.append(self._override_controller)
 
         self._follow_offset = 0.0
-        ANNController.run(self._followcart, self._leadcart, self._follow_offset)
+        ANNController.run(self._followcart, self._leadcart, width, height, self._follow_offset)
 
         self._metrics = Metrics(self._leadcart, self._followcart, self._follow_offset)
         self._updatables.append(self._metrics)
@@ -44,6 +44,6 @@ class Environment(IUpdatable):
 
     def create_gfx_items(self):
         return [
-            RectGfx(self._leadcart, 15, 8, (200, 100, 100)),
-            RectGfx(self._followcart, 15, 8, (100, 100, 200)),
+            RectGfx(self._leadcart, self._leadcart.length, self._leadcart.width, (200, 100, 100)),
+            RectGfx(self._followcart, self._leadcart.length, self._leadcart.width, (100, 100, 200)),
             MetricsGfx(self._metrics, 10, 790)]

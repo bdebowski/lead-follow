@@ -39,4 +39,6 @@ class RollingSum:
 
     @property
     def mean(self):
+        if self._sz_inserted == 0:
+            return 0.0
         return self._sum / self._sz_inserted
