@@ -3,15 +3,13 @@ import pyglet
 from src.gfx.mainwin import MainWin
 
 
-class Frontend:
-    def __init__(self, gfxitems, winwidth, winheight):
-        self._mainwin = MainWin(gfxitems, winwidth, winheight)
+def create_and_run(gfxitems, winwidth, winheight):
+    mainwin = MainWin(gfxitems, winwidth, winheight)
 
-        pyglet.clock.schedule(self._mainwin.update)
+    pyglet.clock.schedule(mainwin.update)
 
-        @self._mainwin.event
-        def on_draw():
-            self._mainwin.draw()
+    @mainwin.event
+    def on_draw():
+        mainwin.draw()
 
-    def run(self):
-        pyglet.app.run()
+    pyglet.app.run()

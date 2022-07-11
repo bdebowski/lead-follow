@@ -10,7 +10,7 @@ class Metrics(IUpdatable):
     _100K = 100000
     _1M = 1000000
 
-    def __init__(self, leadcart, followcart, target_dist):
+    def __init__(self, leadcart, followcart, target_dist=0):
         self._leadcart = leadcart
         self._followcart = followcart
         self._dist_target = target_dist
