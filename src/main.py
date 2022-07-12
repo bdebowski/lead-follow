@@ -2,18 +2,26 @@ import sys
 import os
 sys.path.append(os.getcwd())
 
-from src.env.environment import Environment
-from src.controller.pid_controller import PIDController, PIDControllerFactory
+from src.env.environment import Environment, LEAD_PROGRAM_SIMPLE, LEAD_PROGRAM_COMPLEX, LEAD_PROGRAM_RANDOMISH
+from src.controller.actor_critic_controller import ActorCriticController
+
 from src import frontend
 
 
 def main():
     # create environment e
     # run e on new process
-    env = Environment(1200.0, 800.0, 15.0, 7.0)
+    env = Environment(1200.0, 800.0, 15.0, 7.0, LEAD_PROGRAM_COMPLEX)
     env.run()
 
-    PIDController.run(PIDControllerFactory.create, env.following_cart, env.lead_cart)
+    ActorCriticController.run(
+        ActorCriticController,
+        env.following_cart,
+        env.lead_cart,
+        1200,
+        False,
+        3.0,
+        r"D:\bazyli\Dropbox\code\PythonProjects\lead-follow\model-saves\policy.pt")
 
     # create frontend / main window
     # and start its event loop

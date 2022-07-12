@@ -14,7 +14,7 @@ LEAD_PROGRAM_RANDOMISH = (400.0, 200.0, 3.428571, 2.5, 1.5, 2.142857)
 
 
 class Environment:
-    def __init__(self, width, height, cartlength, cartwidth):
+    def __init__(self, width, height, cartlength, cartwidth, program=LEAD_PROGRAM_SIMPLE):
         self._updatables = []
 
         self._width = width
@@ -31,7 +31,7 @@ class Environment:
         self._override_controller = OverrideController(
             self._leadcart,
             self._lead_centre,
-            *LEAD_PROGRAM_SIMPLE)
+            *program)
         self._updatables.append(self._override_controller)
 
         self._metrics = Metrics(self._leadcart, self._followcart)
