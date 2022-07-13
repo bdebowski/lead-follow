@@ -20,7 +20,7 @@ def main():
         env.lead_cart,
         1200,
         bootstrap_policy=True,
-        bootstrap_policy_loss_threshold=10.0,
+        bootstrap_policy_loss_threshold=4.0,
         policy_network_save_file_path=r"D:\bazyli\Dropbox\code\PythonProjects\lead-follow\model-saves\policy.pt",
         pretrain_critic=True,
         pretrain_critic_loss_threshold=0.01,

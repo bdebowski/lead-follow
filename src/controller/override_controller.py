@@ -28,5 +28,4 @@ class OverrideController(IUpdatable):
         mag_sel = 0.5 * (math.sin(self._t_tot_sec * 2.0 * math.pi / self._mag_shift_per_s) + 1.0)
         mag = (1.0 - mag_sel) * self._mag_one + mag_sel * self._mag_two
 
-        self._cart._pos[0] = self._cart_centre[0] + \
-                             math.sin(self._t_tot_sec_adj * 2.0 * math.pi / self._per_one_s) * mag
+        self._cart._pos[0] = self._cart_centre[0] + math.sin(self._t_tot_sec_adj * 2.0 * math.pi / self._per_one_s) * mag

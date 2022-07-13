@@ -10,10 +10,10 @@ from src.util.rollingsum import RollingSum
 from src.util.rotatingbuffer import RotatingBuffer
 
 # todo:
-#   discount future error
-#   fix off by one error on computed future error
-#   add randomness (i.e. noise) to policy (at input? at output?) so that value network learns smoother and broader function
-#   change value network input to include policy network output (and env state?) from previous time steps as well (t, t-1, t-2)
+#   Works but looks like i) system converges ii) then value network gets dumb because it's only seeing easy examples and it overfits to them iii) then
+#   policy network diverges on feedback from dumb value network iv) then value network gets better again after seeing more difficult examples
+#   - add randomness (i.e. noise) to policy (at input? at output?) so that value network learns smoother and broader function
+#   - change value network input to include policy network output (and env state?) from previous time steps as well (t, t-1, t-2)
 
 
 class PIDBootstrapper:
@@ -33,7 +33,7 @@ class PIDBootstrapper:
 
         self._optimizer = AdamW(policy_network_parameters, lr=0.001)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(10000)
+        self._loss_rolling_sum = RollingSum(1000)
         self._normalization_fn = normalization_fn
 
     def update_policy(self, dt_sec: float, y_policy: torch.Tensor):
@@ -81,15 +81,16 @@ class PolicyOrValueNetwork(torch.nn.Module):
 
 
 class CriticTrainer:
-    def __init__(self, value_network, err_window_size=100, save_path=None, save_threshold_dloss=0.1):
+    def __init__(self, value_network, err_window_size=100, gamma=0.99, save_path=None, save_threshold_dloss=0.1):
         self._value_network = value_network
         self._optimizer = AdamW(value_network.parameters(), lr=0.001)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(10000)
+        self._loss_rolling_sum = RollingSum(1000)
         self._mean_loss_best = 9999999.0
 
         self._err_window_size = err_window_size
-        self._err_rolling_sum = RollingSum(err_window_size)
+        self._gamma = gamma
+        self._discounted_error_history = RotatingBuffer(err_window_size)
 
         self._num_x_history_insertions = 0
         self._x_history = RotatingBuffer(err_window_size)
@@ -98,18 +99,35 @@ class CriticTrainer:
         self._save_threshold_dloss = save_threshold_dloss
 
     def update_critic(self, x: torch.Tensor, current_error: float):
-        self._x_history.set_next(x)
-        self._num_x_history_insertions += 1
-        self._err_rolling_sum.insert_next(current_error)
+        """
+        We are passing in the current state x and the current error.
+        We want the value network to predict the current discounted error G_t given the previous state x_t-n; where n = error window size
+        """
+        # The last item in the discounted_error_history is the sum of an infinite length series e_t + gamma * e_t-1 + gamma^2 * e_t-2 + ...
+        # The second to last item in the discounted_error_history stores what the value of that sum was at the previous time step
+        current_discounted_error = self._gamma * self._discounted_error_history.get_prev() + current_error
+        self._discounted_error_history.set_next(current_discounted_error)
 
         if self._num_x_history_insertions < self._err_window_size:
+            self._x_history.set_next(x)
+            self._num_x_history_insertions += 1
             return self._mean_loss_best
+
+        # We want to get the sum of the discounted error series of finite length running from t=0 to t=1-window_length
+        # We can obtain this sum by taking the current infinite length series sum and subtracting the value of the previous sum at t+1-window_length
+        # discounted by a factor of gamma^window_length
+        prev_discounted_error = self._discounted_error_history.get_prev(t_minus=self._err_window_size)
+        discounted_error_over_window = current_discounted_error - self._gamma ** self._err_window_size * prev_discounted_error
 
         self._optimizer.zero_grad()
         y_critic = self._value_network(self._x_history.get_oldest())
-        loss = self._loss_fn(y_critic, torch.tensor([self._err_rolling_sum.mean]))
+        loss = self._loss_fn(y_critic, torch.tensor([discounted_error_over_window / self._err_window_size]))
         loss.backward()
         self._optimizer.step()
+
+        # We wait until now to insert the current state because all the above math is computed with respect to the previous state(s)
+        self._x_history.set_next(x)
+        self._num_x_history_insertions += 1
 
         self._loss_rolling_sum.insert_next(loss.item())
         mean_loss = self._loss_rolling_sum.mean
@@ -127,7 +145,7 @@ class PolicyTrainer:
         self._value_network = value_network
         self._optimizer = AdamW(policy_network.parameters(), lr=0.0001)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(10000)
+        self._loss_rolling_sum = RollingSum(1000)
         self._mean_loss_best = 9999999.0
 
         self._save_path = save_path
@@ -227,12 +245,14 @@ class ActorCriticController(BaseController):
 
         if self._policy_bootstrapper:
             mean_loss_policy_bootstrap, y_norm = self._policy_bootstrapper.update_policy(dt_sec, y_policy)
+            policy_updated = True
             if mean_loss_policy_bootstrap < self._bootstrap_loss_threshold:
                 self._policy_bootstrapper = None
                 print("Bootstrapping Policy Network finished")
                 if self._policy_network_save_file_path:
                     self._policy_network.save(self._policy_network_save_file_path)
         else:
+            policy_updated = False
             y_norm = y_policy.item()
 
         self._controlling_cart.set_acc((self._denormalize_output_fn(y_norm), 0.0))
@@ -245,7 +265,7 @@ class ActorCriticController(BaseController):
             print("Pretraining Value Network finished")
             self._pretraining_critic = False
 
-        if not self._pretraining_critic:
+        if not self._pretraining_critic and not self._policy_bootstrapper and not policy_updated:
             mean_loss_policy_network = self._policy_network_trainer.update_policy(x, y_policy)
 
         if self._log_frequency_s < self._time_s_since_last_log:
