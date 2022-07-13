@@ -11,7 +11,7 @@ from src import frontend
 def main():
     # create environment e
     # run e on new process
-    env = Environment(1200.0, 800.0, 15.0, 7.0, LEAD_PROGRAM_COMPLEX)
+    env = Environment(1200.0, 800.0, 15.0, 7.0, LEAD_PROGRAM_RANDOMISH)
     env.run()
 
     ActorCriticController.run(
@@ -19,9 +19,12 @@ def main():
         env.following_cart,
         env.lead_cart,
         1200,
-        False,
-        3.0,
-        r"D:\bazyli\Dropbox\code\PythonProjects\lead-follow\model-saves\policy.pt")
+        bootstrap_policy=True,
+        bootstrap_policy_loss_threshold=10.0,
+        policy_network_save_file_path=r"D:\bazyli\Dropbox\code\PythonProjects\lead-follow\model-saves\policy.pt",
+        pretrain_critic=True,
+        pretrain_critic_loss_threshold=0.01,
+        value_network_save_file_path=r"D:\bazyli\Dropbox\code\PythonProjects\lead-follow\model-saves\critic.pt")
 
     # create frontend / main window
     # and start its event loop

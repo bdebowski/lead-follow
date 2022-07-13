@@ -16,13 +16,13 @@ class BaseController(IUpdatable):
         self._iupdatables.append(iupdatable)
 
     @staticmethod
-    def run(controller_factory_method, *args):
-        p = Process(target=BaseController._run, daemon=True, args=(controller_factory_method,) + args)
+    def run(controller_factory_method, *args, **kwargs):
+        p = Process(target=BaseController._run, daemon=True, args=(controller_factory_method,) + args, kwargs=kwargs)
         p.start()
 
     @staticmethod
-    def _run(controller_factory_method, *args):
-        controller = controller_factory_method(*args)
+    def _run(controller_factory_method, *args, **kwargs):
+        controller = controller_factory_method(*args, **kwargs)
 
         t_prev = time.time()
         while True:

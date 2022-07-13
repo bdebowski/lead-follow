@@ -7,6 +7,13 @@ from src.controller.base_controller import BaseController
 from src.common.iupdatable import IUpdatable
 from src.env.cart import Cart
 from src.util.rollingsum import RollingSum
+from src.util.rotatingbuffer import RotatingBuffer
+
+# todo:
+#   discount future error
+#   fix off by one error on computed future error
+#   add randomness (i.e. noise) to policy (at input? at output?) so that value network learns smoother and broader function
+#   change value network input to include policy network output (and env state?) from previous time steps as well (t, t-1, t-2)
 
 
 class PIDBootstrapper:
@@ -24,7 +31,7 @@ class PIDBootstrapper:
         self._err_accum = 0.0
         self._err_prev = 0.0
 
-        self._optimizer = AdamW(policy_network_parameters, 0.001)
+        self._optimizer = AdamW(policy_network_parameters, lr=0.001)
         self._loss_fn = torch.nn.MSELoss()
         self._loss_rolling_sum = RollingSum(10000)
         self._normalization_fn = normalization_fn
@@ -41,7 +48,7 @@ class PIDBootstrapper:
 
         self._optimizer.zero_grad()
 
-        loss = self._loss_fn(y_policy, torch.tensor(y_pid))
+        loss = self._loss_fn(y_policy, torch.tensor([y_pid]))
         loss.backward()
         self._optimizer.step()
 
@@ -50,7 +57,7 @@ class PIDBootstrapper:
         return self._loss_rolling_sum.mean, y_pid
 
 
-class PolicyNetwork(torch.nn.Module):
+class PolicyOrValueNetwork(torch.nn.Module):
     def __init__(self, num_inputs, num_hidden):
         super().__init__()
         self._layer_hidden = torch.nn.Linear(num_inputs, num_hidden, bias=False)
@@ -62,15 +69,85 @@ class PolicyNetwork(torch.nn.Module):
     @staticmethod
     def load(path):
         state_dict = torch.load(path)
-        policy_network = PolicyNetwork(state_dict["_layer_hidden.weight"].shape[1], state_dict["_layer_hidden.weight"].shape[0])
-        policy_network.load_state_dict(state_dict)
-        return policy_network
+        policy_or_value_network = PolicyOrValueNetwork(state_dict["_layer_hidden.weight"].shape[1], state_dict["_layer_hidden.weight"].shape[0])
+        policy_or_value_network.load_state_dict(state_dict)
+        return policy_or_value_network
 
     def save(self, path):
         path = Path(path)
         if not path.parent.exists():
             path.parent.mkdir(parents=True)
         torch.save(self.state_dict(), path)
+
+
+class CriticTrainer:
+    def __init__(self, value_network, err_window_size=100, save_path=None, save_threshold_dloss=0.1):
+        self._value_network = value_network
+        self._optimizer = AdamW(value_network.parameters(), lr=0.001)
+        self._loss_fn = torch.nn.MSELoss()
+        self._loss_rolling_sum = RollingSum(10000)
+        self._mean_loss_best = 9999999.0
+
+        self._err_window_size = err_window_size
+        self._err_rolling_sum = RollingSum(err_window_size)
+
+        self._num_x_history_insertions = 0
+        self._x_history = RotatingBuffer(err_window_size)
+
+        self._save_path = save_path
+        self._save_threshold_dloss = save_threshold_dloss
+
+    def update_critic(self, x: torch.Tensor, current_error: float):
+        self._x_history.set_next(x)
+        self._num_x_history_insertions += 1
+        self._err_rolling_sum.insert_next(current_error)
+
+        if self._num_x_history_insertions < self._err_window_size:
+            return self._mean_loss_best
+
+        self._optimizer.zero_grad()
+        y_critic = self._value_network(self._x_history.get_oldest())
+        loss = self._loss_fn(y_critic, torch.tensor([self._err_rolling_sum.mean]))
+        loss.backward()
+        self._optimizer.step()
+
+        self._loss_rolling_sum.insert_next(loss.item())
+        mean_loss = self._loss_rolling_sum.mean
+
+        if self._save_threshold_dloss < (self._mean_loss_best - mean_loss) / self._mean_loss_best and self._save_path:
+            self._mean_loss_best = mean_loss
+            self._value_network.save(self._save_path)
+
+        return mean_loss
+
+
+class PolicyTrainer:
+    def __init__(self, policy_network, value_network, save_path=None, save_threshold_dloss=0.1):
+        self._policy_network = policy_network
+        self._value_network = value_network
+        self._optimizer = AdamW(policy_network.parameters(), lr=0.0001)
+        self._loss_fn = torch.nn.MSELoss()
+        self._loss_rolling_sum = RollingSum(10000)
+        self._mean_loss_best = 9999999.0
+
+        self._save_path = save_path
+        self._save_threshold_dloss = save_threshold_dloss
+
+    def update_policy(self, x: torch.Tensor, y_policy):
+        self._optimizer.zero_grad()
+        y_critic = self._value_network(torch.cat([x, y_policy]))
+        loss = self._loss_fn(y_critic, torch.tensor([0.0]))
+        loss.backward()
+        self._optimizer.step()
+
+        self._loss_rolling_sum.insert_next(loss.item())
+        mean_loss = self._loss_rolling_sum.mean
+
+        if self._save_threshold_dloss < (self._mean_loss_best - mean_loss) / self._mean_loss_best and self._save_path:
+            self._mean_loss_best = mean_loss
+            self._policy_network.save(self._save_path)
+
+        return mean_loss
 
 
 class ActorCriticController(BaseController):
@@ -80,8 +157,12 @@ class ActorCriticController(BaseController):
             cart_to_follow: Cart,
             x_span: int,
             bootstrap_policy=True,
-            bootstrap_loss_threshold=5.0,
-            policy_network_save_file_path=None):
+            bootstrap_policy_loss_threshold=5.0,
+            policy_network_save_file_path=None,
+            pretrain_critic=True,
+            pretrain_critic_loss_threshold=1.0,
+            value_network_save_file_path=None,
+            log_frequency_s=1.0):
         super().__init__()
 
         self._lead_cart = cart_to_follow
@@ -100,18 +181,38 @@ class ActorCriticController(BaseController):
 
         self._policy_network_save_file_path = Path(policy_network_save_file_path) if policy_network_save_file_path else ""
         if self._policy_network_save_file_path and self._policy_network_save_file_path.exists():
-            self._policy_network = PolicyNetwork.load(self._policy_network_save_file_path)
+            self._policy_network = PolicyOrValueNetwork.load(self._policy_network_save_file_path)
             print("Policy network loaded from {}".format(self._policy_network_save_file_path))
         else:
-            self._policy_network = PolicyNetwork(9, 5)
+            self._policy_network = PolicyOrValueNetwork(9, 5)
 
         if bootstrap_policy:
             self._policy_bootstrapper = PIDBootstrapper(cart_to_control, cart_to_follow, self._policy_network.parameters(), self._normalize_output_fn)
         else:
             self._policy_bootstrapper = None
-        self._bootstrap_loss_threshold = bootstrap_loss_threshold
+        self._bootstrap_loss_threshold = bootstrap_policy_loss_threshold
+
+        self._value_network_save_file_path = Path(value_network_save_file_path) if value_network_save_file_path else ""
+        if self._value_network_save_file_path and self._value_network_save_file_path.exists():
+            self._value_network = PolicyOrValueNetwork.load(self._value_network_save_file_path)
+            print("Value network loaded from {}".format(self._value_network_save_file_path))
+        else:
+            self._value_network = PolicyOrValueNetwork(10, 5)
+
+        self._critic_trainer = CriticTrainer(self._value_network, save_path=value_network_save_file_path)
+        self._pretraining_critic = pretrain_critic
+        self._pretrain_critic_loss_threshold = pretrain_critic_loss_threshold
+
+        self._policy_network_trainer = PolicyTrainer(self._policy_network, self._value_network, save_path=policy_network_save_file_path)
+
+        self._log_frequency_s = log_frequency_s
+        self._time_s_since_last_log = 0.0
 
     def update(self, dt_sec):
+        log_str = "Policy Bootstrap Loss: {:0.5f}   Value Network Loss: {:0.5f}   Policy Network Loss: {:0.5f}"
+        mean_loss_policy_bootstrap, mean_loss_value_network, mean_loss_policy_network = 0.0, 0.0, 0.0
+        self._time_s_since_last_log += dt_sec
+
         x = torch.tensor([
             self._lead_cart_observer.pos,
             self._lead_cart_observer.vel,
@@ -125,17 +226,31 @@ class ActorCriticController(BaseController):
         y_policy = self._policy_network(x)
 
         if self._policy_bootstrapper:
-            mean_loss, y_norm = self._policy_bootstrapper.update_policy(dt_sec, y_policy)
-            print(mean_loss)
-            if mean_loss < self._bootstrap_loss_threshold:
+            mean_loss_policy_bootstrap, y_norm = self._policy_bootstrapper.update_policy(dt_sec, y_policy)
+            if mean_loss_policy_bootstrap < self._bootstrap_loss_threshold:
                 self._policy_bootstrapper = None
-                print("Policy Network bootstrapped")
+                print("Bootstrapping Policy Network finished")
                 if self._policy_network_save_file_path:
                     self._policy_network.save(self._policy_network_save_file_path)
         else:
             y_norm = y_policy.item()
 
         self._controlling_cart.set_acc((self._denormalize_output_fn(y_norm), 0.0))
+
+        current_error = self._lead_cart_observer.pos - self._controlling_cart_observer.pos
+
+        mean_loss_value_network = self._critic_trainer.update_critic(torch.cat([x, torch.tensor([y_norm])]), current_error)
+
+        if self._pretraining_critic and mean_loss_value_network < self._pretrain_critic_loss_threshold:
+            print("Pretraining Value Network finished")
+            self._pretraining_critic = False
+
+        if not self._pretraining_critic:
+            mean_loss_policy_network = self._policy_network_trainer.update_policy(x, y_policy)
+
+        if self._log_frequency_s < self._time_s_since_last_log:
+            print(log_str.format(mean_loss_policy_bootstrap, mean_loss_value_network, mean_loss_policy_network))
+            self._time_s_since_last_log = 0.0
 
 
 class CartObserver(IUpdatable):

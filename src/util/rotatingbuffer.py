@@ -11,3 +11,7 @@ class RotatingBuffer:
     def get_prev(self, t_minus=0):
         i = (self._i - t_minus) % self._sz
         return self._mem[i]
+
+    def get_oldest(self):
+        i = self._i - self._sz + 1
+        return self._mem[i]
