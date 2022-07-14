@@ -81,7 +81,7 @@ class PolicyOrValueNetwork(torch.nn.Module):
 
 
 class CriticTrainer:
-    def __init__(self, value_network, err_window_size=100, gamma=0.99, save_path=None, save_threshold_dloss=0.1):
+    def __init__(self, value_network, err_window_size=25, gamma=0.95, save_path=None, save_threshold_dloss=0.1):
         self._value_network = value_network
         self._optimizer = AdamW(value_network.parameters(), lr=0.001)
         self._loss_fn = torch.nn.MSELoss()
@@ -143,7 +143,7 @@ class PolicyTrainer:
     def __init__(self, policy_network, value_network, save_path=None, save_threshold_dloss=0.1):
         self._policy_network = policy_network
         self._value_network = value_network
-        self._optimizer = AdamW(policy_network.parameters(), lr=0.0001)
+        self._optimizer = AdamW(policy_network.parameters(), lr=0.00025)
         self._loss_fn = torch.nn.MSELoss()
         self._loss_rolling_sum = RollingSum(1000)
         self._mean_loss_best = 9999999.0
@@ -255,8 +255,6 @@ class ActorCriticController(BaseController):
             policy_updated = False
             y_norm = y_policy.item()
 
-        self._controlling_cart.set_acc((self._denormalize_output_fn(y_norm), 0.0))
-
         current_error = self._lead_cart_observer.pos - self._controlling_cart_observer.pos
 
         mean_loss_value_network = self._critic_trainer.update_critic(torch.cat([x, torch.tensor([y_norm])]), current_error)
@@ -271,6 +269,10 @@ class ActorCriticController(BaseController):
         if self._log_frequency_s < self._time_s_since_last_log:
             print(log_str.format(mean_loss_policy_bootstrap, mean_loss_value_network, mean_loss_policy_network))
             self._time_s_since_last_log = 0.0
+
+        # Bound the cart to stay in the visible area by adding acceleration artificially when the bounds are exceeded
+        y_norm += (min(self._controlling_cart_observer.pos, -1.0) + 1.0) * -10.0 + (max(self._controlling_cart_observer.pos, 1.0) - 1.0) * -10.0
+        self._controlling_cart.set_acc((self._denormalize_output_fn(y_norm), 0.0))
 
 
 class CartObserver(IUpdatable):
