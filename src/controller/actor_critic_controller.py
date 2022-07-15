@@ -14,6 +14,7 @@ from src.util.rotatingbuffer import RotatingBuffer
 #   policy network diverges on feedback from dumb value network iv) then value network gets better again after seeing more difficult examples
 #   - add randomness (i.e. noise) to policy (at input? at output?) so that value network learns smoother and broader function
 #   - change value network input to include policy network output (and env state?) from previous time steps as well (t, t-1, t-2)
+#   - or change the architecture to recurrent so that previous time steps are implicitly considered
 
 
 class PIDBootstrapper:
@@ -33,7 +34,7 @@ class PIDBootstrapper:
 
         self._optimizer = AdamW(policy_network_parameters, lr=0.001)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(1000)
+        self._loss_rolling_sum = RollingSum(100)
         self._normalization_fn = normalization_fn
 
     def update_policy(self, dt_sec: float, y_policy: torch.Tensor):
@@ -81,11 +82,11 @@ class PolicyOrValueNetwork(torch.nn.Module):
 
 
 class CriticTrainer:
-    def __init__(self, value_network, err_window_size=25, gamma=0.95, save_path=None, save_threshold_dloss=0.1):
+    def __init__(self, value_network, lr=0.001, err_window_size=25, gamma=0.95, save_path=None, save_threshold_dloss=0.1):
         self._value_network = value_network
-        self._optimizer = AdamW(value_network.parameters(), lr=0.001)
+        self._optimizer = AdamW(value_network.parameters(), lr=lr)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(1000)
+        self._loss_rolling_sum = RollingSum(100)
         self._mean_loss_best = 9999999.0
 
         self._err_window_size = err_window_size
@@ -140,12 +141,12 @@ class CriticTrainer:
 
 
 class PolicyTrainer:
-    def __init__(self, policy_network, value_network, save_path=None, save_threshold_dloss=0.1):
+    def __init__(self, policy_network, value_network, lr=0.0001, save_path=None, save_threshold_dloss=0.1):
         self._policy_network = policy_network
         self._value_network = value_network
-        self._optimizer = AdamW(policy_network.parameters(), lr=0.00025)
+        self._optimizer = AdamW(policy_network.parameters(), lr=lr)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(1000)
+        self._loss_rolling_sum = RollingSum(100)
         self._mean_loss_best = 9999999.0
 
         self._save_path = save_path
@@ -174,6 +175,10 @@ class ActorCriticController(BaseController):
             cart_to_control: Cart,
             cart_to_follow: Cart,
             x_span: int,
+            policy_lr=0.0001,
+            critic_lr=0.001,
+            error_window_size=25,
+            gamma=0.95,
             bootstrap_policy=True,
             bootstrap_policy_loss_threshold=5.0,
             policy_network_save_file_path=None,
@@ -197,6 +202,10 @@ class ActorCriticController(BaseController):
         self._normalize_output_fn = lambda x: x * 2 / x_span
         self._denormalize_output_fn = lambda x: x * x_span / 2
 
+        self._oob_err_penalty = 100.0
+        self._oob_spring_const = 100.0
+        self._oob_damper_const = 100.0
+
         self._policy_network_save_file_path = Path(policy_network_save_file_path) if policy_network_save_file_path else ""
         if self._policy_network_save_file_path and self._policy_network_save_file_path.exists():
             self._policy_network = PolicyOrValueNetwork.load(self._policy_network_save_file_path)
@@ -217,11 +226,16 @@ class ActorCriticController(BaseController):
         else:
             self._value_network = PolicyOrValueNetwork(10, 5)
 
-        self._critic_trainer = CriticTrainer(self._value_network, save_path=value_network_save_file_path)
+        self._critic_trainer = CriticTrainer(
+            self._value_network,
+            lr=critic_lr,
+            err_window_size=error_window_size,
+            gamma=gamma,
+            save_path=value_network_save_file_path)
         self._pretraining_critic = pretrain_critic
         self._pretrain_critic_loss_threshold = pretrain_critic_loss_threshold
 
-        self._policy_network_trainer = PolicyTrainer(self._policy_network, self._value_network, save_path=policy_network_save_file_path)
+        self._policy_network_trainer = PolicyTrainer(self._policy_network, self._value_network, lr=policy_lr, save_path=policy_network_save_file_path)
 
         self._log_frequency_s = log_frequency_s
         self._time_s_since_last_log = 0.0
@@ -255,7 +269,10 @@ class ActorCriticController(BaseController):
             policy_updated = False
             y_norm = y_policy.item()
 
-        current_error = self._lead_cart_observer.pos - self._controlling_cart_observer.pos
+        # Bound the cart to stay in the visible area by adding acceleration and dampening artificially when the bounds are exceeded
+        oob_factor = -(min(self._controlling_cart_observer.pos, -1.0) + 1.0) - (max(self._controlling_cart_observer.pos, 1.0) - 1.0)
+        y_norm += oob_factor * (self._oob_spring_const + self._oob_damper_const * self._controlling_cart_observer.vel ** 2)
+        current_error = self._lead_cart_observer.pos - self._controlling_cart_observer.pos + self._oob_err_penalty * oob_factor
 
         mean_loss_value_network = self._critic_trainer.update_critic(torch.cat([x, torch.tensor([y_norm])]), current_error)
 
@@ -270,8 +287,6 @@ class ActorCriticController(BaseController):
             print(log_str.format(mean_loss_policy_bootstrap, mean_loss_value_network, mean_loss_policy_network))
             self._time_s_since_last_log = 0.0
 
-        # Bound the cart to stay in the visible area by adding acceleration artificially when the bounds are exceeded
-        y_norm += (min(self._controlling_cart_observer.pos, -1.0) + 1.0) * -10.0 + (max(self._controlling_cart_observer.pos, 1.0) - 1.0) * -10.0
         self._controlling_cart.set_acc((self._denormalize_output_fn(y_norm), 0.0))
 
 
