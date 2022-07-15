@@ -33,7 +33,7 @@ class PIDBootstrapper:
 
         self._optimizer = AdamW(policy_network_parameters, lr=0.001)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(1000)
+        self._loss_rolling_sum = RollingSum(100)
         self._normalization_fn = normalization_fn
 
     def update_policy(self, dt_sec: float, y_policy: torch.Tensor):
@@ -81,16 +81,16 @@ class PolicyOrValueNetwork(torch.nn.Module):
 
 
 class CriticTrainer:
-    def __init__(self, value_network, err_window_size=25, gamma=0.95, save_path=None, save_threshold_dloss=0.1):
+    def __init__(self, value_network, err_window_size=100, gamma=0.99, save_path=None, save_threshold_dloss=0.1):
         self._value_network = value_network
         self._optimizer = AdamW(value_network.parameters(), lr=0.001)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(1000)
+        self._loss_rolling_sum = RollingSum(100)
         self._mean_loss_best = 9999999.0
 
         self._err_window_size = err_window_size
         self._gamma = gamma
-        self._discounted_error_history = RotatingBuffer(err_window_size)
+        self._error_history = RotatingBuffer(err_window_size)
 
         self._num_x_history_insertions = 0
         self._x_history = RotatingBuffer(err_window_size)
@@ -103,25 +103,21 @@ class CriticTrainer:
         We are passing in the current state x and the current error.
         We want the value network to predict the current discounted error G_t given the previous state x_t-n; where n = error window size
         """
-        # The last item in the discounted_error_history is the sum of an infinite length series e_t + gamma * e_t-1 + gamma^2 * e_t-2 + ...
-        # The second to last item in the discounted_error_history stores what the value of that sum was at the previous time step
-        current_discounted_error = self._gamma * self._discounted_error_history.get_prev() + current_error
-        self._discounted_error_history.set_next(current_discounted_error)
+        self._error_history.set_next(current_error)
 
+        # We need to fill up the error and state history for things to work as intended
         if self._num_x_history_insertions < self._err_window_size:
             self._x_history.set_next(x)
             self._num_x_history_insertions += 1
             return self._mean_loss_best
 
-        # We want to get the sum of the discounted error series of finite length running from t=0 to t=1-window_length
-        # We can obtain this sum by taking the current infinite length series sum and subtracting the value of the previous sum at t+1-window_length
-        # discounted by a factor of gamma^window_length
-        prev_discounted_error = self._discounted_error_history.get_prev(t_minus=self._err_window_size)
-        discounted_error_over_window = current_discounted_error - self._gamma ** self._err_window_size * prev_discounted_error
+        # The discounted error is future facing and is a series sum like so:
+        #    E_t = e_t + g * e_t+1 + g^2 * e_t+2 + ... + g^n-1 * e_t+n-1; where n is the window size and g is the discount factor gamma
+        discounted_error = sum(self._error_history.get_prev(t) * self._gamma ** (self._err_window_size - t - 1) for t in range(self._err_window_size))
 
         self._optimizer.zero_grad()
         y_critic = self._value_network(self._x_history.get_oldest())
-        loss = self._loss_fn(y_critic, torch.tensor([discounted_error_over_window / self._err_window_size]))
+        loss = self._loss_fn(y_critic, torch.tensor([discounted_error / self._err_window_size]))
         loss.backward()
         self._optimizer.step()
 
@@ -145,7 +141,7 @@ class PolicyTrainer:
         self._value_network = value_network
         self._optimizer = AdamW(policy_network.parameters(), lr=0.00025)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(1000)
+        self._loss_rolling_sum = RollingSum(100)
         self._mean_loss_best = 9999999.0
 
         self._save_path = save_path
