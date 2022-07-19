@@ -34,7 +34,7 @@ class PIDBootstrapper:
 
         self._optimizer = AdamW(policy_network_parameters, lr=0.001)
         self._loss_fn = torch.nn.MSELoss()
-        self._loss_rolling_sum = RollingSum(100)
+        self._loss_rolling_sum = RollingSum(1000)
         self._normalization_fn = normalization_fn
 
     def update_policy(self, dt_sec: float, y_policy: torch.Tensor):
@@ -49,7 +49,7 @@ class PIDBootstrapper:
 
         self._optimizer.zero_grad()
 
-        loss = self._loss_fn(y_policy, torch.tensor([y_pid]))
+        loss = self._loss_fn(y_policy, torch.tensor([[[y_pid]]]))
         loss.backward()
         self._optimizer.step()
 
@@ -61,16 +61,24 @@ class PIDBootstrapper:
 class PolicyOrValueNetwork(torch.nn.Module):
     def __init__(self, num_inputs, num_hidden):
         super().__init__()
-        self._layer_hidden = torch.nn.Linear(num_inputs, num_hidden, bias=False)
+        self._layer_lstm = torch.nn.LSTM(num_inputs, num_hidden, batch_first=True)
+        self._layer_hidden = torch.nn.Linear(num_hidden, num_hidden, bias=False)
         self._layer_out = torch.nn.Linear(num_hidden, 1, bias=False)
+        self._prev_lstm_hidden = torch.zeros([1, 1, num_hidden])
+        self._prev_lstm_cell = torch.zeros([1, 1, num_hidden])
 
     def forward(self, x):
-        return self._layer_out(torch.tanh_(self._layer_hidden(x)))
+        lstm_out, (lstm_hidden, lstm_cell) = self._layer_lstm(x, (self._prev_lstm_hidden, self._prev_lstm_cell))
+        self._prev_lstm_hidden = lstm_hidden.detach()
+        self._prev_lstm_cell = lstm_cell.detach()
+        return self._layer_out(torch.tanh_(self._layer_hidden(lstm_out)))
 
     @staticmethod
     def load(path):
         state_dict = torch.load(path)
-        policy_or_value_network = PolicyOrValueNetwork(state_dict["_layer_hidden.weight"].shape[1], state_dict["_layer_hidden.weight"].shape[0])
+        policy_or_value_network = PolicyOrValueNetwork(
+            state_dict["_layer_lstm.weight_ih_l0"].shape[1],
+            state_dict["_layer_lstm.weight_hh_l0"].shape[1])
         policy_or_value_network.load_state_dict(state_dict)
         return policy_or_value_network
 
@@ -122,7 +130,7 @@ class CriticTrainer:
 
         self._optimizer.zero_grad()
         y_critic = self._value_network(self._x_history.get_oldest())
-        loss = self._loss_fn(y_critic, torch.tensor([discounted_error_over_window / self._err_window_size]))
+        loss = self._loss_fn(y_critic, torch.tensor([[[discounted_error_over_window / self._err_window_size]]]))
         loss.backward()
         self._optimizer.step()
 
@@ -154,8 +162,8 @@ class PolicyTrainer:
 
     def update_policy(self, x: torch.Tensor, y_policy):
         self._optimizer.zero_grad()
-        y_critic = self._value_network(torch.cat([x, y_policy]))
-        loss = self._loss_fn(y_critic, torch.tensor([0.0]))
+        y_critic = self._value_network(torch.cat([x, y_policy], dim=-1))
+        loss = self._loss_fn(y_critic, torch.tensor([[[0.0]]]))
         loss.backward()
         self._optimizer.step()
 
@@ -245,7 +253,7 @@ class ActorCriticController(BaseController):
         mean_loss_policy_bootstrap, mean_loss_value_network, mean_loss_policy_network = 0.0, 0.0, 0.0
         self._time_s_since_last_log += dt_sec
 
-        x = torch.tensor([
+        x = torch.tensor([[[
             self._lead_cart_observer.pos,
             self._lead_cart_observer.vel,
             self._lead_cart_observer.acc,
@@ -254,7 +262,7 @@ class ActorCriticController(BaseController):
             self._controlling_cart_observer.acc,
             self._lead_follow_cart_difference_observer.d_pos,
             self._lead_follow_cart_difference_observer.d_vel,
-            self._lead_follow_cart_difference_observer.d_acc])
+            self._lead_follow_cart_difference_observer.d_acc]]])
         y_policy = self._policy_network(x)
 
         if self._policy_bootstrapper:
@@ -274,7 +282,7 @@ class ActorCriticController(BaseController):
         y_norm += oob_factor * (self._oob_spring_const + self._oob_damper_const * self._controlling_cart_observer.vel ** 2)
         current_error = self._lead_cart_observer.pos - self._controlling_cart_observer.pos + self._oob_err_penalty * oob_factor
 
-        mean_loss_value_network = self._critic_trainer.update_critic(torch.cat([x, torch.tensor([y_norm])]), current_error)
+        mean_loss_value_network = self._critic_trainer.update_critic(torch.cat([x, torch.tensor([[[y_norm]]])], dim=-1), current_error)
 
         if self._pretraining_critic and mean_loss_value_network < self._pretrain_critic_loss_threshold:
             print("Pretraining Value Network finished")
